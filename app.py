@@ -291,15 +291,17 @@ def index():
 
 @app.route("/api/scan", methods=["POST"])
 def scan():
-    body   = request.json or {}
-    symbol = body.get("symbol","").strip().upper()
-    if not symbol:
-        return jsonify({"ok": False, "error": "Symbol is required"}), 400
+    try:
+        body   = request.json or {}
+        symbol = body.get("symbol","").strip().upper()
+        if not symbol:
+            return jsonify({"ok": False, "error": "Symbol is required"}), 400
 
-    # Login
-    auth_token, err = login()
-    if err:
-        return jsonify({"ok": False, "error": f"Login failed: {err}"}), 500
+        # Login
+        auth_token, err = login()
+        if err:
+            app.logger.error(f"Login error: {err}")
+            return jsonify({"ok": False, "error": f"Login failed: {err}"}), 500
 
     # Instruments
     instruments, err = get_instruments()
@@ -357,6 +359,10 @@ def scan():
         "pe_levels": trade_levels(pe_high) if pe_high else None,
         "timestamp": datetime.datetime.now().strftime("%d %b %Y, %I:%M %p"),
     })
+    except Exception as e:
+        import traceback
+        app.logger.error(f"Scan error: {traceback.format_exc()}")
+        return jsonify({"ok": False, "error": str(e)}), 500
 
 
 @app.route("/api/override", methods=["POST"])
