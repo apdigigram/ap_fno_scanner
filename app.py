@@ -297,71 +297,63 @@ def scan():
         if not symbol:
             return jsonify({"ok": False, "error": "Symbol is required"}), 400
 
-        # Login
         auth_token, err = login()
         if err:
-            app.logger.error(f"Login error: {err}")
             return jsonify({"ok": False, "error": f"Login failed: {err}"}), 500
 
-    # Instruments
-    instruments, err = get_instruments()
-    if err:
-        return jsonify({"ok": False, "error": f"Instrument load failed: {err}"}), 500
+        instruments, err = get_instruments()
+        if err:
+            return jsonify({"ok": False, "error": f"Instrument load failed: {err}"}), 500
 
-    # Equity token
-    token, lot_size = find_token(instruments, symbol)
-    if not token:
-        return jsonify({"ok": False, "error": f"'{symbol}' not found. Check the symbol."}), 404
+        token, lot_size = find_token(instruments, symbol)
+        if not token:
+            return jsonify({"ok": False, "error": f"'{symbol}' not found. Check the symbol."}), 404
 
-    # Spot price
-    spot, err = get_spot_price(token, auth_token)
-    if not spot:
-        return jsonify({"ok": False, "error": f"Spot price fetch failed: {err}"}), 500
+        spot, err = get_spot_price(token, auth_token)
+        if not spot:
+            return jsonify({"ok": False, "error": f"Spot price fetch failed: {err}"}), 500
 
-    # Strikes & expiry
-    interval  = get_strike_interval(symbol, spot)
-    base      = int(spot // interval) * interval
-    ce_strike = base
-    pe_strike = base + interval
-    expiry    = get_monthly_expiry()
-    exp_angel = expiry.strftime("%d%b%Y").upper()
-    exp_disp  = expiry.strftime("%d %b %Y")
+        interval  = get_strike_interval(symbol, spot)
+        base      = int(spot // interval) * interval
+        ce_strike = base
+        pe_strike = base + interval
+        expiry    = get_monthly_expiry()
+        exp_angel = expiry.strftime("%d%b%Y").upper()
+        exp_disp  = expiry.strftime("%d %b %Y")
 
-    # Check FNO availability
-    nfo_check = [i for i in instruments
-                 if i.get("exch_seg") == "NFO"
-                 and symbol.upper() in i.get("symbol","").upper()]
-    if not nfo_check:
-        return jsonify({"ok": False,
-                        "error": f"'{symbol}' is not in FNO. Only F&O approved stocks work."}), 404
+        nfo_check = [i for i in instruments
+                     if i.get("exch_seg") == "NFO"
+                     and symbol.upper() in i.get("symbol","").upper()]
+        if not nfo_check:
+            return jsonify({"ok": False,
+                            "error": f"'{symbol}' is not in FNO. Only F&O approved stocks work."}), 404
 
-    # Option tokens
-    ce_token = find_option_token(instruments, symbol, ce_strike, "CE", exp_angel)
-    pe_token = find_option_token(instruments, symbol, pe_strike, "PE", exp_angel)
+        ce_token = find_option_token(instruments, symbol, ce_strike, "CE", exp_angel)
+        pe_token = find_option_token(instruments, symbol, pe_strike, "PE", exp_angel)
 
-    ce_high, ce_err = (get_days_high(ce_token, auth_token) if ce_token else (None, "Token not found"))
-    time.sleep(1)
-    pe_high, pe_err = (get_days_high(pe_token, auth_token) if pe_token else (None, "Token not found"))
+        ce_high, ce_err = (get_days_high(ce_token, auth_token) if ce_token else (None, "Token not found"))
+        time.sleep(1)
+        pe_high, pe_err = (get_days_high(pe_token, auth_token) if pe_token else (None, "Token not found"))
 
-    return jsonify({
-        "ok":        True,
-        "symbol":    symbol,
-        "spot":      spot,
-        "lot_size":  lot_size,
-        "expiry":    exp_disp,
-        "ce_strike": ce_strike,
-        "pe_strike": pe_strike,
-        "ce_high":   ce_high,
-        "pe_high":   pe_high,
-        "ce_err":    ce_err,
-        "pe_err":    pe_err,
-        "ce_levels": trade_levels(ce_high) if ce_high else None,
-        "pe_levels": trade_levels(pe_high) if pe_high else None,
-        "timestamp": datetime.datetime.now().strftime("%d %b %Y, %I:%M %p"),
-    })
+        return jsonify({
+            "ok":        True,
+            "symbol":    symbol,
+            "spot":      spot,
+            "lot_size":  lot_size,
+            "expiry":    exp_disp,
+            "ce_strike": ce_strike,
+            "pe_strike": pe_strike,
+            "ce_high":   ce_high,
+            "pe_high":   pe_high,
+            "ce_err":    ce_err,
+            "pe_err":    pe_err,
+            "ce_levels": trade_levels(ce_high) if ce_high else None,
+            "pe_levels": trade_levels(pe_high) if pe_high else None,
+            "timestamp": datetime.datetime.now().strftime("%d %b %Y, %I:%M %p"),
+        })
     except Exception as e:
         import traceback
-        app.logger.error(f"Scan error: {traceback.format_exc()}")
+        app.logger.error(traceback.format_exc())
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
