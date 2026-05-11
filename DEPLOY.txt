@@ -1,0 +1,96 @@
+# FNO Scanner — Mobile Web App Deployment Guide
+# Deploy FREE on Render.com — takes ~10 minutes
+
+═══════════════════════════════════════════════
+ STEP 1 — Put files on GitHub
+═══════════════════════════════════════════════
+
+1. Go to github.com → sign up free if needed
+2. Click "New repository" → name it "fno-scanner" → Create
+3. Upload these files:
+     app.py
+     requirements.txt
+     Procfile
+     templates/index.html   ← put inside a folder called "templates"
+
+
+═══════════════════════════════════════════════
+ STEP 2 — Deploy on Render (free)
+═══════════════════════════════════════════════
+
+1. Go to render.com → sign up free
+2. Click "New +" → "Web Service"
+3. Connect your GitHub → select "fno-scanner" repo
+4. Settings:
+     Name:         fno-scanner (or anything)
+     Runtime:      Python 3
+     Build Command: pip install -r requirements.txt
+     Start Command: gunicorn app:app
+5. Click "Create Web Service"
+
+
+═══════════════════════════════════════════════
+ STEP 3 — Add your Angel One credentials
+═══════════════════════════════════════════════
+
+In Render dashboard → your service → "Environment" tab
+Add these 4 variables (keep them secret — never put in code):
+
+  Key                    Value
+  ─────────────────────────────────────────────
+  ANGEL_API_KEY          your api key here
+  ANGEL_CLIENT_ID        your angel one login id
+  ANGEL_PASSWORD         your angel one password
+  ANGEL_TOTP_SECRET      your totp secret here
+
+Click "Save Changes" — Render redeploys automatically.
+
+
+═══════════════════════════════════════════════
+ STEP 4 — Open on your phone
+═══════════════════════════════════════════════
+
+Render gives you a URL like:
+  https://fno-scanner.onrender.com
+
+Open this in Chrome/Safari on your phone.
+Bookmark it or add to home screen for instant access.
+
+To add to home screen:
+  iPhone: Share → Add to Home Screen
+  Android: Menu (⋮) → Add to Home Screen
+
+
+═══════════════════════════════════════════════
+ USAGE (after 9:50 AM)
+═══════════════════════════════════════════════
+
+1. Open the app on your phone
+2. Type the stock symbol (or tap a quick chip)
+3. Tap Scan
+4. App fetches: spot price, ITM strikes, day's high
+5. All trade levels shown instantly — Entry, TP, SL,
+   Breakeven, and full Trailing SL table
+
+
+═══════════════════════════════════════════════
+ COST
+═══════════════════════════════════════════════
+
+Render free tier: FREE
+  - App sleeps after 15 min inactivity
+  - First request after sleep takes ~30 sec to wake
+  - During market hours (9–3:30) it stays awake
+
+To avoid the sleep delay: upgrade to Render Starter
+plan ($7/month) — keeps it always on.
+Or just tap the app at 9:15 AM to wake it up before trading.
+
+
+═══════════════════════════════════════════════
+ SECURITY NOTE
+═══════════════════════════════════════════════
+
+Your credentials are stored as environment variables
+on Render's servers — never exposed in code or browser.
+Only you can see them in the Render dashboard.
