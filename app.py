@@ -1,73 +1,96 @@
 """
 FNO Options Worksheet — Flask Backend
-Angel One SmartAPI integration
+Angel One SmartAPI integration (updated with all fixes)
 """
 
 from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
 import pyotp
 import datetime
+import calendar
 import requests
+import time
 import os
 
 app = Flask(__name__)
 CORS(app)
 
 # ─────────────────────────────────────────────
-#  CONFIG — Set these as environment variables
-#  (never hardcode credentials in source code)
+#  CONFIG — environment variables on Render
 # ─────────────────────────────────────────────
 API_KEY     = os.environ.get("ANGEL_API_KEY", "")
 CLIENT_ID   = os.environ.get("ANGEL_CLIENT_ID", "")
 PASSWORD    = os.environ.get("ANGEL_PASSWORD", "")
 TOTP_SECRET = os.environ.get("ANGEL_TOTP_SECRET", "")
 
-BASE_URL    = "https://apiconnect.angelbroking.com"
+BASE_URL       = "https://apiconnect.angelbroking.com"
 INSTRUMENT_URL = "https://margincalculator.angelbroking.com/OpenAPI_File/files/OpenAPIScripMaster.json"
 
 # ─────────────────────────────────────────────
 #  Trade parameters
 # ─────────────────────────────────────────────
-TP_PCT     = 11.0
-SL_PCT     = 6.0
-BE_PCT     = 5.0
+TP_PCT = 11.0
+SL_PCT = 6.0
+BE_PCT = 5.0
 
+# ─────────────────────────────────────────────
+#  Strike intervals
+# ─────────────────────────────────────────────
 STRIKE_INTERVALS = {
-    "NIFTY":50,"BANKNIFTY":100,"FINNIFTY":50,
-    "RELIANCE":100,"TCS":100,"INFY":50,
-    "HDFCBANK":50,"ICICIBANK":50,"AXISBANK":50,
-    "SBIN":20,"TATAMOTORS":50,"MARUTI":500,
-    "BAJFINANCE":100,"WIPRO":20,"LT":100,
-    "NTPC":20,"ONGC":20,"COALINDIA":20,
-    "ADANIENT":100,"JSWSTEEL":50,"TATASTEEL":20,
-    "HINDALCO":20,"DIVISLAB":500,"CIPLA":50,
-    "SUNPHARMA":50,"DRREDDY":100,"APOLLOHOSP":100,
-    "HCLTECH":50,"BHARTIARTL":50,"TITAN":100,
-    "ASIANPAINT":100,"KOTAKBANK":50,"INDUSINDBK":100,
-    "BAJAJFINSV":50,"ULTRACEMCO":200,"HEROMOTOCO":100,
-    "EICHERMOT":200,"ITC":10,"HINDUNILVR":100,
-    "VEDL":20,"UPL":20,"TECHM":50,
+    "NIFTY":50,"BANKNIFTY":100,"FINNIFTY":50,"MIDCPNIFTY":25,
+    "RELIANCE":100,"TCS":100,"MARUTI":500,"BAJFINANCE":100,
+    "DIVISLAB":500,"DRREDDY":100,"APOLLOHOSP":100,"ULTRACEMCO":200,
+    "EICHERMOT":200,"HEROMOTOCO":100,"INDUSINDBK":100,"KOTAKBANK":50,
+    "HDFCBANK":50,"BAJAJFINSV":50,"LT":100,"ASIANPAINT":100,
+    "HINDUNILVR":100,"TITAN":100,"ADANIENT":100,
+    "ICICIBANK":50,"AXISBANK":50,"INFY":50,"HCLTECH":50,
+    "BHARTIARTL":50,"SUNPHARMA":50,"CIPLA":50,"JSWSTEEL":50,
+    "TECHM":50,"TATAMOTORS":50,"AMBER":100,
+    "SBIN":20,"WIPRO":20,"NTPC":20,"ONGC":20,"COALINDIA":20,
+    "TATASTEEL":20,"HINDALCO":20,"VEDL":20,"UPL":20,
+    "NHPC":10,"IRFC":10,"RECLTD":20,"PFC":20,
+    "CANBK":10,"BANKBARODA":10,"UNIONBANK":5,"SAIL":10,
+    "IDEA":1,"SUZLON":1,"YESBANK":1,"IRCTC":20,
+    "ITC":10,"ZOMATO":10,"PAYTM":20,
 }
 
-# ── In-memory session cache (reuse auth token) ──
+# ─────────────────────────────────────────────
+#  NSE holiday-adjusted expiry overrides
+# ─────────────────────────────────────────────
+EXPIRY_OVERRIDES = {
+    (2026, 1):  datetime.date(2026, 1, 29),
+    (2026, 2):  datetime.date(2026, 2, 26),
+    (2026, 3):  datetime.date(2026, 3, 26),
+    (2026, 4):  datetime.date(2026, 4, 30),
+    (2026, 5):  datetime.date(2026, 5, 26),  # holiday on 28th
+    (2026, 6):  datetime.date(2026, 6, 25),
+    (2026, 7):  datetime.date(2026, 7, 30),
+    (2026, 8):  datetime.date(2026, 8, 27),
+    (2026, 9):  datetime.date(2026, 9, 24),
+    (2026, 10): datetime.date(2026, 10, 29),
+    (2026, 11): datetime.date(2026, 11, 26),
+    (2026, 12): datetime.date(2026, 12, 31),
+}
+
+# ── In-memory cache ──
 _session = {"token": None, "expiry": None}
 _instruments_cache = None
 
 
 # ════════════════════════════════════════════════
-#  Auth helpers
+#  Helpers
 # ════════════════════════════════════════════════
 def get_headers(auth_token):
     return {
-        "Authorization": f"Bearer {auth_token}",
-        "Content-Type":  "application/json",
-        "Accept":        "application/json",
-        "X-UserType":    "USER",
-        "X-SourceID":    "WEB",
-        "X-ClientLocalIP": "127.0.0.1",
+        "Authorization":    f"Bearer {auth_token}",
+        "Content-Type":     "application/json",
+        "Accept":           "application/json",
+        "X-UserType":       "USER",
+        "X-SourceID":       "WEB",
+        "X-ClientLocalIP":  "127.0.0.1",
         "X-ClientPublicIP": "127.0.0.1",
-        "X-MACAddress":  "00:00:00:00:00:00",
-        "X-PrivateKey":  API_KEY,
+        "X-MACAddress":     "00:00:00:00:00:00",
+        "X-PrivateKey":     API_KEY,
     }
 
 
@@ -76,22 +99,13 @@ def login():
     now = datetime.datetime.now()
     if _session["token"] and _session["expiry"] and now < _session["expiry"]:
         return _session["token"], None
-
     totp = pyotp.TOTP(TOTP_SECRET).now()
-    payload = {
-        "clientcode": CLIENT_ID,
-        "password":   PASSWORD,
-        "totp":       totp,
-    }
+    payload = {"clientcode": CLIENT_ID, "password": PASSWORD, "totp": totp}
     headers = {
-        "Content-Type": "application/json",
-        "Accept":       "application/json",
-        "X-UserType":   "USER",
-        "X-SourceID":   "WEB",
-        "X-ClientLocalIP": "127.0.0.1",
-        "X-ClientPublicIP": "127.0.0.1",
-        "X-MACAddress": "00:00:00:00:00:00",
-        "X-PrivateKey": API_KEY,
+        "Content-Type": "application/json", "Accept": "application/json",
+        "X-UserType": "USER", "X-SourceID": "WEB",
+        "X-ClientLocalIP": "127.0.0.1", "X-ClientPublicIP": "127.0.0.1",
+        "X-MACAddress": "00:00:00:00:00:00", "X-PrivateKey": API_KEY,
     }
     try:
         r = requests.post(
@@ -109,9 +123,6 @@ def login():
         return None, str(e)
 
 
-# ════════════════════════════════════════════════
-#  Instrument master
-# ════════════════════════════════════════════════
 def get_instruments():
     global _instruments_cache
     if _instruments_cache:
@@ -134,25 +145,69 @@ def find_token(instruments, symbol):
 
 
 def find_option_token(instruments, symbol, strike, opt_type, expiry_str):
-    target = f"{symbol}{expiry_str}{int(strike)}{opt_type}".upper()
-    for i in instruments:
-        if i.get("exch_seg","") == "NFO" and i.get("symbol","").upper() == target:
-            return i["token"]
-    # fallback partial match
-    for i in instruments:
+    strike_int = int(strike)
+    strike_variants = [str(strike_int), f"{strike_int:.1f}", f"{strike_int:05d}"]
+    short_expiry = expiry_str[:2] + expiry_str[2:5] + expiry_str[7:]  # 26MAY26
+    expiry_variants = [expiry_str, short_expiry]
+
+    # Exact match
+    for exp in expiry_variants:
+        for sv in strike_variants:
+            target = f"{symbol}{exp}{sv}{opt_type}".upper()
+            for i in instruments:
+                if (i.get("exch_seg","") == "NFO"
+                        and i.get("symbol","").upper() == target):
+                    return i["token"]
+
+    # Broad partial match
+    nfo = [i for i in instruments if i.get("exch_seg","") == "NFO"]
+    for i in nfo:
         sym = i.get("symbol","").upper()
-        if (i.get("exch_seg","") == "NFO"
-                and symbol.upper() in sym
-                and str(int(strike)) in sym
-                and opt_type in sym
-                and expiry_str[:5] in sym):
+        if (symbol.upper() in sym
+                and str(strike_int) in sym
+                and sym.endswith(opt_type)
+                and any(exp[:5] in sym for exp in expiry_variants)):
             return i["token"]
+
     return None
 
 
-# ════════════════════════════════════════════════
-#  Market data helpers
-# ════════════════════════════════════════════════
+def get_strike_interval(symbol, spot=None):
+    if symbol.upper() in STRIKE_INTERVALS:
+        return STRIKE_INTERVALS[symbol.upper()]
+    if spot:
+        if spot < 50:   return 5
+        if spot < 100:  return 10
+        if spot < 500:  return 20
+        if spot < 1000: return 50
+        if spot < 3000: return 100
+        if spot < 6000: return 200
+        return 500
+    return 100
+
+
+def get_monthly_expiry():
+    today = datetime.date.today()
+
+    def last_thursday(y, m):
+        last_day = calendar.monthrange(y, m)[1]
+        d = datetime.date(y, m, last_day)
+        while d.weekday() != 3:
+            d -= datetime.timedelta(days=1)
+        return d
+
+    def get_expiry(y, m):
+        return EXPIRY_OVERRIDES.get((y, m), last_thursday(y, m))
+
+    expiry = get_expiry(today.year, today.month)
+    if today > expiry:
+        if today.month == 12:
+            expiry = get_expiry(today.year + 1, 1)
+        else:
+            expiry = get_expiry(today.year, today.month + 1)
+    return expiry
+
+
 def get_spot_price(token, auth_token):
     headers = get_headers(auth_token)
     payload = {"exchange": "NSE", "tradingsymbol": "", "symboltoken": token}
@@ -164,12 +219,13 @@ def get_spot_price(token, auth_token):
         data = r.json()
         if data.get("status"):
             return float(data["data"]["ltp"]), None
-        return None, data.get("message","LTP fetch failed")
+        return None, data.get("message", "LTP fetch failed")
     except Exception as e:
         return None, str(e)
 
 
 def get_days_high(token, auth_token):
+    """Fetch day's high with retry on rate limit."""
     headers = get_headers(auth_token)
     now   = datetime.datetime.now()
     start = now.replace(hour=9, minute=15, second=0, microsecond=0)
@@ -180,57 +236,47 @@ def get_days_high(token, auth_token):
         "fromdate":    start.strftime("%Y-%m-%d %H:%M"),
         "todate":      now.strftime("%Y-%m-%d %H:%M"),
     }
-    try:
-        r = requests.post(
-            f"{BASE_URL}/rest/secure/angelbroking/historical/v1/getCandleData",
-            json=payload, headers=headers, timeout=10
-        )
-        data = r.json()
-        if data.get("status") and data.get("data"):
-            highs = [float(c[2]) for c in data["data"]]
-            return max(highs), None
-        return None, "No candle data"
-    except Exception as e:
-        return None, str(e)
-
-
-# ════════════════════════════════════════════════
-#  Expiry & strike helpers
-# ════════════════════════════════════════════════
-def get_monthly_expiry():
-    import calendar
-    today = datetime.date.today()
-
-    def last_thursday(y, m):
-        last = calendar.monthrange(y, m)[1]
-        d = datetime.date(y, m, last)
-        while d.weekday() != 3:
-            d -= datetime.timedelta(days=1)
-        return d
-
-    exp = last_thursday(today.year, today.month)
-    if today > exp:
-        exp = last_thursday(today.year, today.month % 12 + 1) if today.month < 12 \
-              else last_thursday(today.year + 1, 1)
-    return exp
+    retries = [2, 4, 6]
+    for wait in retries:
+        try:
+            r = requests.post(
+                f"{BASE_URL}/rest/secure/angelbroking/historical/v1/getCandleData",
+                json=payload, headers=headers, timeout=10
+            )
+            data = r.json()
+            if data.get("status") and data.get("data"):
+                highs = [float(c[2]) for c in data["data"]]
+                return max(highs), None
+            msg = str(data.get("message","")).lower()
+            if "access" in msg or "rate" in msg or "exceed" in msg:
+                time.sleep(wait)
+                continue
+            return None, data.get("message","No data")
+        except Exception as e:
+            err = str(e).lower()
+            if "access" in err or "rate" in err or "exceed" in err:
+                time.sleep(wait)
+                continue
+            return None, str(e)
+    return None, "Rate limit exceeded"
 
 
 def trade_levels(entry):
-    tp   = round(entry * (1 + TP_PCT/100), 2)
-    sl   = round(entry * (1 - SL_PCT/100), 2)
-    be   = round(entry * (1 + BE_PCT/100), 2)
+    tp = round(entry * (1 + TP_PCT/100), 2)
+    sl = round(entry * (1 - SL_PCT/100), 2)
+    be = round(entry * (1 + BE_PCT/100), 2)
     trail_rows = []
     for p in [5, 8, 10, 12, 14, 16, 18, 20]:
         price    = round(entry * (1 + p/100), 2)
         sl_lock  = 0 if p == BE_PCT else p * 0.5
         sl_price = round(entry * (1 + sl_lock/100), 2)
         trail_rows.append({
-            "profit_pct": p,
-            "price":      price,
+            "profit_pct":  p,
+            "price":       price,
             "sl_lock_pct": sl_lock,
-            "sl_price":   sl_price,
-            "pts_saved":  round(sl_price - entry, 2),
-            "is_be":      p == BE_PCT,
+            "sl_price":    sl_price,
+            "pts_saved":   round(sl_price - entry, 2),
+            "is_be":       p == BE_PCT,
         })
     return {"entry": entry, "tp": tp, "sl": sl, "be": be, "trail": trail_rows}
 
@@ -250,28 +296,28 @@ def scan():
     if not symbol:
         return jsonify({"ok": False, "error": "Symbol is required"}), 400
 
-    # 1 — Login
+    # Login
     auth_token, err = login()
     if err:
         return jsonify({"ok": False, "error": f"Login failed: {err}"}), 500
 
-    # 2 — Instruments
+    # Instruments
     instruments, err = get_instruments()
     if err:
         return jsonify({"ok": False, "error": f"Instrument load failed: {err}"}), 500
 
-    # 3 — Equity token
+    # Equity token
     token, lot_size = find_token(instruments, symbol)
     if not token:
         return jsonify({"ok": False, "error": f"'{symbol}' not found. Check the symbol."}), 404
 
-    # 4 — Spot price
+    # Spot price
     spot, err = get_spot_price(token, auth_token)
     if not spot:
         return jsonify({"ok": False, "error": f"Spot price fetch failed: {err}"}), 500
 
-    # 5 — Strikes & expiry
-    interval  = STRIKE_INTERVALS.get(symbol, 100)
+    # Strikes & expiry
+    interval  = get_strike_interval(symbol, spot)
     base      = int(spot // interval) * interval
     ce_strike = base
     pe_strike = base + interval
@@ -279,11 +325,20 @@ def scan():
     exp_angel = expiry.strftime("%d%b%Y").upper()
     exp_disp  = expiry.strftime("%d %b %Y")
 
-    # 6 — Option day's high
+    # Check FNO availability
+    nfo_check = [i for i in instruments
+                 if i.get("exch_seg") == "NFO"
+                 and symbol.upper() in i.get("symbol","").upper()]
+    if not nfo_check:
+        return jsonify({"ok": False,
+                        "error": f"'{symbol}' is not in FNO. Only F&O approved stocks work."}), 404
+
+    # Option tokens
     ce_token = find_option_token(instruments, symbol, ce_strike, "CE", exp_angel)
     pe_token = find_option_token(instruments, symbol, pe_strike, "PE", exp_angel)
 
     ce_high, ce_err = (get_days_high(ce_token, auth_token) if ce_token else (None, "Token not found"))
+    time.sleep(1)
     pe_high, pe_err = (get_days_high(pe_token, auth_token) if pe_token else (None, "Token not found"))
 
     return jsonify({
@@ -306,7 +361,6 @@ def scan():
 
 @app.route("/api/override", methods=["POST"])
 def override():
-    """Manual entry if auto-fetch fails."""
     body      = request.json or {}
     symbol    = body.get("symbol","").upper()
     ce_high   = body.get("ce_high")
@@ -316,7 +370,6 @@ def override():
     expiry    = body.get("expiry","")
     lot_size  = body.get("lot_size", 1)
     spot      = body.get("spot", 0)
-
     return jsonify({
         "ok":        True,
         "symbol":    symbol,
