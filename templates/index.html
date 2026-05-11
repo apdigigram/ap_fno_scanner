@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<meta name="theme-color" content="#0d0f14">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>FNO Scanner</title>
+<style>
+:root {
+  --bg:      #0d0f14;
+  --s1:      #13161e;
+  --s2:      #1a1e28;
+  --border:  #252a38;
+  --b2:      #2e3448;
+  --text:    #e8eaf0;
+  --muted:   #6b7280;
+  --accent:  #4f8ef7;
+  --green:   #22c55e;
+  --gdim:    rgba(34,197,94,.12);
+  --red:     #ef4444;
+  --rdim:    rgba(239,68,68,.12);
+  --amber:   #f59e0b;
+  --adim:    rgba(245,158,11,.12);
+  --mono:    'JetBrains Mono', 'Courier New', monospace;
+  --sans:    'Sora', system-ui, sans-serif;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+html, body { background: var(--bg); color: var(--text); font-family: var(--sans); min-height: 100vh; }
+body { padding: 0 0 4rem; }
+
+/* ── top bar ── */
+.topbar { background: var(--s1); border-bottom: 1px solid var(--border); padding: 14px 16px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 10; }
+.topbar-title { font-size: 15px; font-weight: 600; color: var(--text); }
+.topbar-sub { font-size: 10px; color: var(--muted); font-family: var(--mono); letter-spacing: .06em; margin-top: 1px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 6px var(--green); animation: pulse 2s infinite; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+/* ── search bar ── */
+.search-wrap { padding: 16px; }
+.search-box { display: flex; gap: 10px; }
+.search-input {
+  flex: 1; background: var(--s1); border: 1px solid var(--b2);
+  border-radius: 12px; padding: 14px 16px; color: var(--text);
+  font-family: var(--mono); font-size: 16px; outline: none;
+  text-transform: uppercase; letter-spacing: .08em;
+  transition: border-color .15s;
+}
+.search-input:focus { border-color: var(--accent); }
+.search-input::placeholder { color: var(--muted); text-transform: none; letter-spacing: 0; }
+.scan-btn {
+  background: var(--accent); border: none; border-radius: 12px;
+  padding: 14px 20px; color: #fff; font-family: var(--sans);
+  font-size: 15px; font-weight: 600; cursor: pointer;
+  transition: opacity .15s; white-space: nowrap;
+}
+.scan-btn:active { opacity: .8; transform: scale(.97); }
+.scan-btn:disabled { opacity: .5; }
+
+/* ── quick chips ── */
+.chips { display: flex; gap: 8px; overflow-x: auto; padding: 0 16px 12px; scrollbar-width: none; }
+.chips::-webkit-scrollbar { display: none; }
+.chip {
+  background: var(--s2); border: 1px solid var(--border); border-radius: 20px;
+  padding: 6px 14px; font-size: 12px; font-family: var(--mono);
+  color: var(--muted); cursor: pointer; white-space: nowrap;
+  transition: all .15s;
+}
+.chip:active { background: var(--b2); color: var(--text); }
+
+/* ── status ── */
+.status { margin: 0 16px 12px; padding: 12px 14px; border-radius: 10px; font-size: 13px; font-family: var(--mono); display: none; }
+.status.loading { display: flex; align-items: center; gap: 10px; background: var(--s2); border: 1px solid var(--b2); color: var(--muted); }
+.status.error   { display: block; background: var(--rdim); border: 1px solid rgba(239,68,68,.3); color: var(--red); }
+.spinner { width: 16px; height: 16px; border: 2px solid var(--b2); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; flex-shrink: 0; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── result card ── */
+.result { padding: 0 16px; display: none; }
+.result.show { display: block; }
+
+.stock-header { background: var(--s1); border: 1px solid var(--b2); border-radius: 14px; padding: 14px 16px; margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; }
+.stock-name { font-size: 22px; font-weight: 700; color: var(--text); }
+.stock-meta { font-size: 12px; color: var(--muted); font-family: var(--mono); margin-top: 3px; }
+.spot-val { text-align: right; }
+.spot-label { font-size: 10px; color: var(--muted); font-family: var(--mono); letter-spacing: .06em; text-transform: uppercase; }
+.spot-price { font-size: 20px; font-weight: 600; color: var(--accent); font-family: var(--mono); }
+
+/* ── option cards ── */
+.opt-card { border-radius: 14px; padding: 14px 16px; margin-bottom: 10px; border: 1px solid; }
+.opt-card.ce { background: rgba(34,197,94,.05); border-color: rgba(34,197,94,.25); }
+.opt-card.pe { background: rgba(239,68,68,.05); border-color: rgba(239,68,68,.25); }
+
+.opt-head { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+.opt-badge { font-size: 11px; font-family: var(--mono); font-weight: 700; padding: 4px 10px; border-radius: 20px; }
+.ce .opt-badge { background: var(--gdim); color: var(--green); }
+.pe .opt-badge { background: var(--rdim); color: var(--red); }
+.opt-strike { font-size: 18px; font-weight: 700; color: var(--text); font-family: var(--mono); }
+.opt-expiry { font-size: 11px; color: var(--muted); font-family: var(--mono); margin-left: auto; }
+
+.levels-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.level-box { background: var(--s2); border-radius: 10px; padding: 10px 12px; border: 1px solid var(--border); }
+.level-box.entry { border-color: rgba(79,142,247,.4); background: rgba(79,142,247,.08); }
+.level-box.tp    { border-color: rgba(34,197,94,.35); background: var(--gdim); }
+.level-box.sl    { border-color: rgba(239,68,68,.35); background: var(--rdim); }
+.level-box.be    { border-color: rgba(245,158,11,.35); background: var(--adim); }
+.lv-label { font-size: 10px; color: var(--muted); font-family: var(--mono); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 4px; }
+.lv-price { font-size: 19px; font-weight: 700; font-family: var(--mono); }
+.entry .lv-price { color: var(--accent); }
+.tp    .lv-price { color: var(--green); }
+.sl    .lv-price { color: var(--red); }
+.be    .lv-price { color: var(--amber); }
+.lv-pts { font-size: 11px; color: var(--muted); font-family: var(--mono); margin-top: 2px; }
+
+/* ── manual override ── */
+.override-box { background: var(--s1); border: 1px solid var(--b2); border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; }
+.override-title { font-size: 11px; color: var(--amber); font-family: var(--mono); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
+.override-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+.override-row:last-child { margin-bottom: 0; }
+.override-label { font-size: 12px; color: var(--muted); font-family: var(--mono); min-width: 80px; }
+.override-input { flex: 1; background: var(--bg); border: 1px solid var(--b2); border-radius: 8px; padding: 9px 12px; color: var(--text); font-family: var(--mono); font-size: 14px; outline: none; }
+.override-input:focus { border-color: var(--amber); }
+.override-btn { width: 100%; margin-top: 10px; padding: 11px; background: var(--amber); border: none; border-radius: 8px; color: #000; font-weight: 700; font-size: 14px; cursor: pointer; }
+.override-btn:active { opacity: .85; }
+
+/* ── trail table ── */
+.trail-section { background: var(--s1); border: 1px solid var(--b2); border-radius: 14px; padding: 14px 16px; margin-bottom: 10px; }
+.trail-title { font-size: 11px; color: var(--amber); font-family: var(--mono); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 12px; }
+.trail-table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 12px; }
+.trail-table th { color: var(--muted); text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--border); font-size: 10px; text-transform: uppercase; letter-spacing: .04em; }
+.trail-table td { padding: 9px 8px; border-bottom: 1px solid var(--border); }
+.trail-table tr:last-child td { border-bottom: none; }
+.trail-table tr.be-row td { color: var(--accent); }
+.trail-table tr.trail-row td { color: var(--green); }
+.trail-table td.sl-col { color: var(--amber); }
+.trail-table tr.be-row td.sl-col { color: var(--accent); }
+
+/* ── rules strip ── */
+.rules { background: rgba(79,142,247,.07); border: 1px solid rgba(79,142,247,.2); border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; }
+.rule { font-size: 12px; color: var(--muted); line-height: 1.9; font-family: var(--mono); }
+.rule b { color: var(--text); }
+.rule::before { content: '● '; color: var(--accent); }
+
+/* ── timestamp ── */
+.ts { text-align: center; font-size: 11px; color: var(--muted); font-family: var(--mono); padding: 8px 0 4px; }
+
+/* ── section tabs for CE/PE ── */
+.tabs { display: flex; background: var(--s2); border-radius: 12px; padding: 4px; gap: 4px; margin-bottom: 12px; }
+.tab { flex: 1; padding: 10px; border: none; border-radius: 9px; font-family: var(--sans); font-size: 13px; font-weight: 600; cursor: pointer; transition: all .15s; background: transparent; color: var(--muted); }
+.tab.active-ce { background: rgba(34,197,94,.15); color: var(--green); }
+.tab.active-pe { background: rgba(239,68,68,.15); color: var(--red); }
+.pane { display: none; }
+.pane.show { display: block; }
+</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Sora:wght@400;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+
+<div class="topbar">
+  <div>
+    <div class="topbar-title">FNO Scanner</div>
+    <div class="topbar-sub">CHoCH · Post 9:50 AM · Monthly</div>
+  </div>
+  <div class="dot" id="dot"></div>
+</div>
+
+<div class="search-wrap">
+  <div class="search-box">
+    <input class="search-input" id="sym-input" type="text" placeholder="Enter symbol…" maxlength="20" autocomplete="off" autocorrect="off" spellcheck="false">
+    <button class="scan-btn" id="scan-btn" onclick="scan()">Scan</button>
+  </div>
+</div>
+
+<div class="chips" id="chips">
+  <div class="chip" onclick="quickScan('RELIANCE')">RELIANCE</div>
+  <div class="chip" onclick="quickScan('TATAMOTORS')">TATAMOTORS</div>
+  <div class="chip" onclick="quickScan('SBIN')">SBIN</div>
+  <div class="chip" onclick="quickScan('ICICIBANK')">ICICIBANK</div>
+  <div class="chip" onclick="quickScan('INFY')">INFY</div>
+  <div class="chip" onclick="quickScan('HDFCBANK')">HDFCBANK</div>
+  <div class="chip" onclick="quickScan('AXISBANK')">AXISBANK</div>
+  <div class="chip" onclick="quickScan('BAJFINANCE')">BAJFINANCE</div>
+  <div class="chip" onclick="quickScan('LT')">LT</div>
+  <div class="chip" onclick="quickScan('WIPRO')">WIPRO</div>
+</div>
+
+<div class="status" id="status">
+  <div class="spinner"></div>
+  <span id="status-msg">Fetching data…</span>
+</div>
+
+<div class="result" id="result">
+
+  <div class="stock-header">
+    <div>
+      <div class="stock-name" id="r-symbol">—</div>
+      <div class="stock-meta" id="r-meta">—</div>
+    </div>
+    <div class="spot-val">
+      <div class="spot-label">Spot</div>
+      <div class="spot-price" id="r-spot">—</div>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <button class="tab active-ce" id="tab-ce" onclick="showTab('ce')">📈 CE — Call</button>
+    <button class="tab" id="tab-pe" onclick="showTab('pe')">📉 PE — Put</button>
+  </div>
+
+  <!-- CE pane -->
+  <div class="pane show" id="pane-ce">
+    <div class="opt-card ce">
+      <div class="opt-head">
+        <span class="opt-badge">CE · ITM</span>
+        <span class="opt-strike" id="r-ce-strike">—</span>
+        <span class="opt-expiry" id="r-ce-expiry">—</span>
+      </div>
+      <div class="levels-grid">
+        <div class="level-box entry">
+          <div class="lv-label">Entry (Day's High)</div>
+          <div class="lv-price" id="r-ce-entry">—</div>
+          <div class="lv-pts">Break above to enter</div>
+        </div>
+        <div class="level-box tp">
+          <div class="lv-label">Target +11%</div>
+          <div class="lv-price" id="r-ce-tp">—</div>
+          <div class="lv-pts" id="r-ce-tp-pts">—</div>
+        </div>
+        <div class="level-box sl">
+          <div class="lv-label">Stop Loss −6%</div>
+          <div class="lv-price" id="r-ce-sl">—</div>
+          <div class="lv-pts" id="r-ce-sl-pts">—</div>
+        </div>
+        <div class="level-box be">
+          <div class="lv-label">Breakeven at +5%</div>
+          <div class="lv-price" id="r-ce-be">—</div>
+          <div class="lv-pts">Move SL to cost here</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="override-box" id="ce-override" style="display:none;">
+      <div class="override-title">⚠ CE day's high not fetched — enter manually</div>
+      <div class="override-row">
+        <span class="override-label">CE High ₹</span>
+        <input class="override-input" id="ce-manual" type="number" placeholder="e.g. 148.50">
+      </div>
+      <button class="override-btn" onclick="applyOverride('ce')">Calculate CE Levels</button>
+    </div>
+
+    <div class="trail-section">
+      <div class="trail-title">⬆ CE Trailing SL Schedule</div>
+      <table class="trail-table">
+        <thead><tr><th>Profit</th><th>CE Price</th><th>Trail SL</th><th>SL Price</th><th>Saved</th></tr></thead>
+        <tbody id="r-ce-trail"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- PE pane -->
+  <div class="pane" id="pane-pe">
+    <div class="opt-card pe">
+      <div class="opt-head">
+        <span class="opt-badge">PE · ITM</span>
+        <span class="opt-strike" id="r-pe-strike">—</span>
+        <span class="opt-expiry" id="r-pe-expiry">—</span>
+      </div>
+      <div class="levels-grid">
+        <div class="level-box entry">
+          <div class="lv-label">Entry (Day's High)</div>
+          <div class="lv-price" id="r-pe-entry">—</div>
+          <div class="lv-pts">Break above to enter</div>
+        </div>
+        <div class="level-box tp">
+          <div class="lv-label">Target +11%</div>
+          <div class="lv-price" id="r-pe-tp">—</div>
+          <div class="lv-pts" id="r-pe-tp-pts">—</div>
+        </div>
+        <div class="level-box sl">
+          <div class="lv-label">Stop Loss −6%</div>
+          <div class="lv-price" id="r-pe-sl">—</div>
+          <div class="lv-pts" id="r-pe-sl-pts">—</div>
+        </div>
+        <div class="level-box be">
+          <div class="lv-label">Breakeven at +5%</div>
+          <div class="lv-price" id="r-pe-be">—</div>
+          <div class="lv-pts">Move SL to cost here</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="override-box" id="pe-override" style="display:none;">
+      <div class="override-title">⚠ PE day's high not fetched — enter manually</div>
+      <div class="override-row">
+        <span class="override-label">PE High ₹</span>
+        <input class="override-input" id="pe-manual" type="number" placeholder="e.g. 62.30">
+      </div>
+      <button class="override-btn" onclick="applyOverride('pe')">Calculate PE Levels</button>
+    </div>
+
+    <div class="trail-section">
+      <div class="trail-title">⬇ PE Trailing SL Schedule</div>
+      <table class="trail-table">
+        <thead><tr><th>Profit</th><th>PE Price</th><th>Trail SL</th><th>SL Price</th><th>Saved</th></tr></thead>
+        <tbody id="r-pe-trail"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="rules">
+    <div class="rule"><b>Entry:</b> Only if price breaks & closes above Day's High on 5-min candle</div>
+    <div class="rule"><b>Hard SL:</b> Closing basis below SL — not just a wick</div>
+    <div class="rule"><b>At +5%:</b> Immediately move SL to your entry (zero risk)</div>
+    <div class="rule"><b>Trail:</b> SL locks at 50% of your highest profit reached</div>
+    <div class="rule"><b>CE</b> if market is Bullish · <b>PE</b> if market is Bearish</div>
+  </div>
+
+  <div class="ts" id="r-ts"></div>
+</div>
+
+<script>
+const fmt = n => '₹' + parseFloat(n).toFixed(2);
+const pts = (a,b) => { const d = (a-b); return (d>=0?'+':'')+d.toFixed(2); }
+let _data = {};
+
+async function scan() {
+  const sym = document.getElementById('sym-input').value.trim().toUpperCase();
+  if (!sym) return;
+  setLoading(true, `Scanning ${sym}…`);
+  hideResult();
+  try {
+    const res = await fetch('/api/scan', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({symbol: sym})
+    });
+    const data = await res.json();
+    if (!data.ok) { setError(data.error); return; }
+    _data = data;
+    render(data);
+  } catch(e) {
+    setError('Network error. Check your connection.');
+  } finally {
+    setLoading(false);
+  }
+}
+
+function quickScan(sym) {
+  document.getElementById('sym-input').value = sym;
+  scan();
+}
+
+function render(d) {
+  // header
+  document.getElementById('r-symbol').textContent = d.symbol;
+  document.getElementById('r-meta').textContent = `Lot: ${d.lot_size} · ${d.expiry} Monthly`;
+  document.getElementById('r-spot').textContent = fmt(d.spot);
+
+  // CE
+  document.getElementById('r-ce-strike').textContent = d.ce_strike + ' CE';
+  document.getElementById('r-ce-expiry').textContent = d.expiry;
+
+  if (d.ce_levels) {
+    const l = d.ce_levels;
+    document.getElementById('r-ce-entry').textContent = fmt(l.entry);
+    document.getElementById('r-ce-tp').textContent    = fmt(l.tp);
+    document.getElementById('r-ce-tp-pts').textContent= '+₹'+(l.tp-l.entry).toFixed(2)+' · +₹'+(((l.tp-l.entry)*d.lot_size).toFixed(0))+'/lot';
+    document.getElementById('r-ce-sl').textContent    = fmt(l.sl);
+    document.getElementById('r-ce-sl-pts').textContent= '−₹'+(l.entry-l.sl).toFixed(2)+' · −₹'+((l.entry-l.sl)*d.lot_size).toFixed(0)+'/lot';
+    document.getElementById('r-ce-be').textContent    = fmt(l.be);
+    renderTrail('r-ce-trail', l.trail);
+    document.getElementById('ce-override').style.display = 'none';
+  } else {
+    ['r-ce-entry','r-ce-tp','r-ce-sl','r-ce-be'].forEach(id => document.getElementById(id).textContent = '—');
+    document.getElementById('r-ce-trail').innerHTML = '<tr><td colspan="5" style="color:var(--muted);text-align:center;padding:12px;">Enter manually below</td></tr>';
+    document.getElementById('ce-override').style.display = 'block';
+  }
+
+  // PE
+  document.getElementById('r-pe-strike').textContent = d.pe_strike + ' PE';
+  document.getElementById('r-pe-expiry').textContent = d.expiry;
+
+  if (d.pe_levels) {
+    const l = d.pe_levels;
+    document.getElementById('r-pe-entry').textContent = fmt(l.entry);
+    document.getElementById('r-pe-tp').textContent    = fmt(l.tp);
+    document.getElementById('r-pe-tp-pts').textContent= '+₹'+(l.tp-l.entry).toFixed(2)+' · +₹'+(((l.tp-l.entry)*d.lot_size).toFixed(0))+'/lot';
+    document.getElementById('r-pe-sl').textContent    = fmt(l.sl);
+    document.getElementById('r-pe-sl-pts').textContent= '−₹'+(l.entry-l.sl).toFixed(2)+' · −₹'+((l.entry-l.sl)*d.lot_size).toFixed(0)+'/lot';
+    document.getElementById('r-pe-be').textContent    = fmt(l.be);
+    renderTrail('r-pe-trail', l.trail);
+    document.getElementById('pe-override').style.display = 'none';
+  } else {
+    ['r-pe-entry','r-pe-tp','r-pe-sl','r-pe-be'].forEach(id => document.getElementById(id).textContent = '—');
+    document.getElementById('r-pe-trail').innerHTML = '<tr><td colspan="5" style="color:var(--muted);text-align:center;padding:12px;">Enter manually below</td></tr>';
+    document.getElementById('pe-override').style.display = 'block';
+  }
+
+  document.getElementById('r-ts').textContent = 'Fetched at ' + d.timestamp;
+  showResult();
+  showTab('ce');
+}
+
+function renderTrail(tbodyId, rows) {
+  const tbody = document.getElementById(tbodyId);
+  tbody.innerHTML = rows.map(r => `
+    <tr class="${r.is_be ? 'be-row' : 'trail-row'}">
+      <td>+${r.profit_pct}%</td>
+      <td>${fmt(r.price)}</td>
+      <td class="sl-col">${r.is_be ? 'Cost' : '+'+r.sl_lock_pct+'%'}</td>
+      <td class="sl-col">${fmt(r.sl_price)}</td>
+      <td>${r.is_be ? '₹0' : '+₹'+r.pts_saved.toFixed(2)}</td>
+    </tr>`).join('');
+}
+
+async function applyOverride(leg) {
+  const val = parseFloat(document.getElementById(leg+'-manual').value);
+  if (!val || isNaN(val)) { alert('Enter a valid price'); return; }
+  const res = await fetch('/api/override', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({
+      symbol: _data.symbol, spot: _data.spot, lot_size: _data.lot_size,
+      expiry: _data.expiry, ce_strike: _data.ce_strike, pe_strike: _data.pe_strike,
+      [leg+'_high']: val,
+      [leg === 'ce' ? 'pe_high' : 'ce_high']: leg === 'ce' ? _data.pe_high : _data.ce_high
+    })
+  });
+  const data = await res.json();
+  _data = {..._data, ...data};
+  if (leg === 'ce' && data.ce_levels) {
+    const l = data.ce_levels;
+    document.getElementById('r-ce-entry').textContent = fmt(l.entry);
+    document.getElementById('r-ce-tp').textContent    = fmt(l.tp);
+    document.getElementById('r-ce-tp-pts').textContent= '+₹'+(l.tp-l.entry).toFixed(2)+' · +₹'+(((l.tp-l.entry)*_data.lot_size).toFixed(0))+'/lot';
+    document.getElementById('r-ce-sl').textContent    = fmt(l.sl);
+    document.getElementById('r-ce-sl-pts').textContent= '−₹'+(l.entry-l.sl).toFixed(2)+' · −₹'+((l.entry-l.sl)*_data.lot_size).toFixed(0)+'/lot';
+    document.getElementById('r-ce-be').textContent    = fmt(l.be);
+    renderTrail('r-ce-trail', l.trail);
+    document.getElementById('ce-override').style.display = 'none';
+  }
+  if (leg === 'pe' && data.pe_levels) {
+    const l = data.pe_levels;
+    document.getElementById('r-pe-entry').textContent = fmt(l.entry);
+    document.getElementById('r-pe-tp').textContent    = fmt(l.tp);
+    document.getElementById('r-pe-tp-pts').textContent= '+₹'+(l.tp-l.entry).toFixed(2)+' · +₹'+(((l.tp-l.entry)*_data.lot_size).toFixed(0))+'/lot';
+    document.getElementById('r-pe-sl').textContent    = fmt(l.sl);
+    document.getElementById('r-pe-sl-pts').textContent= '−₹'+(l.entry-l.sl).toFixed(2)+' · −₹'+((l.entry-l.sl)*_data.lot_size).toFixed(0)+'/lot';
+    document.getElementById('r-pe-be').textContent    = fmt(l.be);
+    renderTrail('r-pe-trail', l.trail);
+    document.getElementById('pe-override').style.display = 'none';
+  }
+}
+
+function showTab(t) {
+  document.getElementById('pane-ce').className = 'pane' + (t==='ce'?' show':'');
+  document.getElementById('pane-pe').className = 'pane' + (t==='pe'?' show':'');
+  document.getElementById('tab-ce').className  = 'tab' + (t==='ce'?' active-ce':'');
+  document.getElementById('tab-pe').className  = 'tab' + (t==='pe'?' active-pe':'');
+}
+
+function setLoading(on, msg) {
+  const el = document.getElementById('status');
+  el.className = on ? 'status loading' : 'status';
+  document.getElementById('status-msg').textContent = msg || '';
+  document.getElementById('scan-btn').disabled = on;
+}
+
+function setError(msg) {
+  const el = document.getElementById('status');
+  el.className = 'status error';
+  el.textContent = '✗ ' + msg;
+}
+
+function showResult()  { document.getElementById('result').className = 'result show'; }
+function hideResult()  { document.getElementById('result').className = 'result'; }
+
+document.getElementById('sym-input').addEventListener('keydown', e => { if (e.key === 'Enter') scan(); });
+</script>
+</body>
+</html>
